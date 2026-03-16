@@ -1,3 +1,7 @@
+In Django, the ORM is simply known as the Django ORM.
+Django ORM, associations are expressed through model fields rather than separate macros like Rails.
+Conceptually they map very closely to Rails associations.
+
 🔸ForeignKey
     This is exactly like belongs_to in rails.
     It is used for foreign key 
@@ -178,7 +182,7 @@
           name = models.CharField(max_length=100)
 
         class Membership(models.Model):
-          user = models.ForeignKey(User, on_delete=models.CASCADE)
+          user = models.ForeignKey(User, related_name = "memberships", on_delete=models.CASCADE)
           group = models.ForeignKey(Group, on_delete=models.CASCADE)
           role = models.CharField(max_length=50)
             
@@ -352,26 +356,6 @@ These are operations that should run outside the HTTP request cycle.
 
 In Django projects this is commonly implemented using Celery.
 
-1. Why tasks.py exists
-
-Some operations are slow and shouldn't block the web request:
-
-Examples:
-
-sending emails
-
-generating reports
-
-resizing images
-
-processing payments
-
-syncing external APIs
-
-sending notifications
-
-Instead of running during the request, they are sent to a background worker.
-
 2. Django example
 
 Project structure:
@@ -382,7 +366,9 @@ users/
   services.py
   views.py
   tasks.py
-tasks.py
+
+
+#tasks.py
 from celery import shared_task
 from django.core.mail import send_mail
 
@@ -394,7 +380,9 @@ def send_welcome_email(user_email):
         "noreply@example.com",
         [user_email],
     )
-services.py
+
+
+#services.py
 from .models import User
 from .tasks import send_welcome_email
 
@@ -423,25 +411,20 @@ end
 Call it like:
 
 SendWelcomeEmailJob.perform_later(user)
+
+
 4. Background worker systems
 
 Typical setups:
+  Django ecosystem:
+    Celery (most common)
+    Redis as queue broker
+    Sometimes RabbitMQ    
 
-Django ecosystem:
-
-Celery (most common)
-
-Redis as queue broker
-
-sometimes RabbitMQ
-
-Rails ecosystem:
-
-Sidekiq
-
-Resque
-
-Delayed Job
+  Rails ecosystem:
+    Sidekiq
+    Resque
+    Delayed Job
 
 Most popular combo:
 
@@ -449,35 +432,34 @@ Framework	Typical stack
 Django	Celery + Redis
 Rails	Active Job + Sidekiq + Redis
 5. Mental mapping for a Rails developer
-Django	Rails
-tasks.py	app/jobs
-Celery task	ActiveJob
-.delay()	perform_later
+
+Django	       Rails
+tasks.py	      app/jobs
+Celery task	    ActiveJob
+.delay()	      perform_later
 worker process	Sidekiq worker
 
-✅ Simple rule
 
-views.py     → HTTP layer
-services.py  → business logic
-selectors.py → read queries
-tasks.py     → background jobs
 
 💡 Interesting thing:
 In large Django codebases, tasks are often triggered from services, not views — very similar to how good Rails apps call jobs from service objects.
 
-If you'd like, I can also show you a complete “production-grade Django app structure” (very similar to well-structured Rails apps) that many senior Django teams use. It helps Rails developers feel at home very quickly.
 
-do we have things like rake_task in rails similiar anything in Django?
+
+
+===========================
+
+Do we have things like rake_task in rails similiar anything in Django?
 
 Yes 👍 Django has something very similar to Rails Rake tasks.
 
 In Django they are called Management Commands.
 
 Rails vs Django comparison
-Rails	Django
-rake task	management command
-lib/tasks/*.rake	management/commands/*.py
-rake db:migrate	python manage.py migrate
+Rails	                  Django
+rake task	              management command
+lib/tasks/*.rake	      management/commands/*.py
+rake db:migrate	        python manage.py migrate
 
 Rails uses Rake, while Django uses management commands through manage.py.
 
@@ -501,7 +483,8 @@ users/
   management/
     commands/
       deactivate_users.py
-deactivate_users.py
+
+#deactivate_users.py
 from django.core.management.base import BaseCommand
 from users.models import User
 from datetime import timedelta
