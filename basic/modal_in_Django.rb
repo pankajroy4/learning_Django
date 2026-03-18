@@ -4,6 +4,8 @@
   In Django, modal inherits from Django′s base ORM class modals.Modal 
   example: Class User(modals.Modal)
 
+  In Django, we define fields in modal.
+
 🔸What is models.Model?
   models.Model is Django′s base ORM class.
   It provides all database functionality like table mapping, query methods, saving records, deleting records, migrations integration
@@ -157,6 +159,7 @@
 
     Example:
       class Todo(models.Model):
+          # here we define a field called 'title'
           title = models.CharField(max_length=255)
 
       Django automatically adds:

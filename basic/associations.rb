@@ -16,6 +16,7 @@ Conceptually they map very closely to Rails associations.
     Django Example:
       class Post(models.Model):
           user = models.ForeignKey("User", on_delete=models.CASCADE)
+          # here django will define a foreign key field 'user_id'
 
       ForeignKey represents many-to-one
       on_delete defines behavior when parent is deleted.
@@ -50,7 +51,7 @@ Conceptually they map very closely to Rails associations.
 
     Django Example:
       class Post(models.Model):
-          user = models.ForeignKey(User, on_delete=models.CASCADE)
+          user = models.ForeignKey(User, on_delete=models.CASCADE) # user_id
 
       Now automatically you get:
         user.post_set.all()
@@ -100,6 +101,10 @@ Conceptually they map very closely to Rails associations.
         has_many :groups, through: :memberships
       end
 
+      class Group < ApplicationRecord
+        has_many :memberships
+      end
+
       class Membership < ApplicationRecord
         belongs_to :user
         belongs_to :group
@@ -108,20 +113,24 @@ Conceptually they map very closely to Rails associations.
     Django Example:
       class User(models.Model):
         name = models.CharField(max_length=100)
+        groups = models.ManyToManyField(Group, through="Membership") # This line tells Django that: “Don’t create an automatic join table. Use membership instead.” So Django internally connects: User <-- membership --> Group
+        #Here, groups is a manager for a collection of Group objects. It is not a column.
 
       class Group(models.Model):
         name = models.CharField(max_length=100)
 
       class Membership(models.Model):
-        user = models.ForeignKey(User, on_delete=models.CASCADE)
-        group = models.ForeignKey(Group, on_delete=models.CASCADE)
-        role = models.CharField(max_length=50)
-
-      class User(models.Model):
-        groups = models.ManyToManyField(Group, through="Membership")
+        user = models.ForeignKey(User, on_delete=models.CASCADE)    # user_id
+        group = models.ForeignKey(Group, on_delete=models.CASCADE)  # group_id
+        role = models.CharField(max_length=50)                      # role
 
       Usage example:
         user.groups.all()
+        # Generated Sql:
+          SELECT group.*
+          FROM group
+          JOIN membership ON group.id = membership.group_id
+          WHERE membership.user_id = 101;
 
 🔸ManyToManyField
     This is exactly like has_and_belongs_to_many in rails.
@@ -349,204 +358,3 @@ Conceptually they map very closely to Rails associations.
         .get(id=user_id)
       )
 
-
-====================================================================
-tasks.py usually contains background jobs (asynchronous tasks).
-These are operations that should run outside the HTTP request cycle.
-
-In Django projects this is commonly implemented using Celery.
-
-2. Django example
-
-Project structure:
-
-users/
-  models.py
-  selectors.py
-  services.py
-  views.py
-  tasks.py
-
-
-#tasks.py
-from celery import shared_task
-from django.core.mail import send_mail
-
-@shared_task
-def send_welcome_email(user_email):
-    send_mail(
-        "Welcome!",
-        "Thanks for joining.",
-        "noreply@example.com",
-        [user_email],
-    )
-
-
-#services.py
-from .models import User
-from .tasks import send_welcome_email
-
-def create_user(email):
-    user = User.objects.create(email=email)
-
-    send_welcome_email.delay(user.email)  # runs async
-    return user
-
-.delay() sends the job to the queue.
-
-3. Rails equivalent
-
-The closest equivalent in Rails is Active Job.
-
-Example Rails:
-
-class SendWelcomeEmailJob < ApplicationJob
-  queue_as :default
-
-  def perform(user)
-    UserMailer.welcome_email(user).deliver_now
-  end
-end
-
-Call it like:
-
-SendWelcomeEmailJob.perform_later(user)
-
-
-4. Background worker systems
-
-Typical setups:
-  Django ecosystem:
-    Celery (most common)
-    Redis as queue broker
-    Sometimes RabbitMQ    
-
-  Rails ecosystem:
-    Sidekiq
-    Resque
-    Delayed Job
-
-Most popular combo:
-
-Framework	Typical stack
-Django	Celery + Redis
-Rails	Active Job + Sidekiq + Redis
-5. Mental mapping for a Rails developer
-
-Django	       Rails
-tasks.py	      app/jobs
-Celery task	    ActiveJob
-.delay()	      perform_later
-worker process	Sidekiq worker
-
-
-
-💡 Interesting thing:
-In large Django codebases, tasks are often triggered from services, not views — very similar to how good Rails apps call jobs from service objects.
-
-
-
-
-===========================
-
-Do we have things like rake_task in rails similiar anything in Django?
-
-Yes 👍 Django has something very similar to Rails Rake tasks.
-
-In Django they are called Management Commands.
-
-Rails vs Django comparison
-Rails	                  Django
-rake task	              management command
-lib/tasks/*.rake	      management/commands/*.py
-rake db:migrate	        python manage.py migrate
-
-Rails uses Rake, while Django uses management commands through manage.py.
-
-Example Rails Rake task
-lib/tasks/users.rake
-namespace :users do
-  desc "Deactivate inactive users"
-  task deactivate: :environment do
-    User.where("last_login < ?", 1.year.ago).update_all(active: false)
-  end
-end
-
-Run:
-
-rake users:deactivate
-Django equivalent (management command)
-
-Directory structure:
-
-users/
-  management/
-    commands/
-      deactivate_users.py
-
-#deactivate_users.py
-from django.core.management.base import BaseCommand
-from users.models import User
-from datetime import timedelta
-from django.utils import timezone
-
-
-class Command(BaseCommand):
-    help = "Deactivate inactive users"
-
-    def handle(self, *args, **kwargs):
-        cutoff = timezone.now() - timedelta(days=365)
-
-        User.objects.filter(last_login__lt=cutoff).update(active=False)
-
-        self.stdout.write(self.style.SUCCESS("Users deactivated"))
-
-Run:
-
-python manage.py deactivate_users
-When management commands are used
-
-Very similar to Rake tasks:
-
-Examples:
-
-data migrations
-
-cron jobs
-
-importing CSV
-
-cleaning database
-
-sending bulk emails
-
-running scripts
-
-Example:
-
-python manage.py import_users users.csv
-Where they live
-app/
-  management/
-    commands/
-      my_command.py
-
-Django auto-discovers commands from installed apps.
-
-Mental mapping for Rails developers
-Rails	Django
-rake task	management command
-rake db:seed	python manage.py loaddata
-rake mytask	python manage.py mytask
-
-✅ Short answer:
-Yes — Django’s equivalent of a Rails Rake task is a management command run via python manage.py.
-
-💡 One interesting thing Rails developers often like:
-You can combine management commands + Celery tasks to build powerful background pipelines in Django.
-
-Example flow:
-
-cron → management command → enqueue Celery tasks
-
-If you want, I can also show you how cron jobs are usually implemented in Django production, which is slightly different from Rails + whenever gem.
