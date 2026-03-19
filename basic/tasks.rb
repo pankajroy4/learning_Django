@@ -17,30 +17,29 @@
 
   We generally trigger the task from services.
   Example: 
-  #tasks.py
+    #tasks.py
     from celery import shared_task
     from django.core.mail import send_mail
 
     @shared_task # OR @app.task
     def send_welcome_email(user_email):
-        send_mail(
-            "Welcome!",
-            "Thanks for joining.",
-            "noreply@example.com",
-            [user_email],
-        )
+      send_mail(
+        "Welcome!",
+        "Thanks for joining.",
+        "noreply@example.com",
+        [user_email],
+      )
 
-
-  #services.py
+    #services.py
     from .models import User
     from .tasks import send_welcome_email
 
     def create_user(email):
-        user = User.objects.create(email=email)
-        send_welcome_email.delay(user.email)  # runs async
-        # Or 
-        # send_welcome_email.apply_async(args=["user@example.com"])
-        return user
+      user = User.objects.create(email=email)
+      send_welcome_email.delay(user.email)  # runs async
+      # Or 
+      # send_welcome_email.apply_async(args=["user@example.com"])
+      return user
 
   Here, the delay() methods sends the job to the queue.
 
@@ -51,7 +50,6 @@
       Sometimes RabbitMQ    
 
   Most popular combo in Django:	Celery + Redis
-
 
   Mental mapping for a Rails developer
         +-------------------------------------------+
@@ -436,7 +434,7 @@ NOTE: Just like in rails we run the sidekiq and redis, in Django also we must ru
         So, Use higher concurrency
 
 
-🔸Difference between process vs thread pool in Celery (important vs Sidekiq)
+🔸Difference between process pool vs thread pool in Celery (important vs Sidekiq)
   This is a very important concept—especially coming from Sidekiq, because Sidekiq = threads, while Celery defaults to processes.
 
     +-------------------------------------------------------------------------------------------+
@@ -448,161 +446,342 @@ NOTE: Just like in rails we run the sidekiq and redis, in Django also we must ru
     | Isolation         | Strong           | Weak                                               |
     | Speed (I/O)       | Good             | Excellent                                          |
     +-------------------------------------------------------------------------------------------+
-==============================================
-1. Process Pool (Celery default)
-celery -A project worker --concurrency=4
 
-👉 This creates 4 separate OS processes
-
-🧠 What that means
-
-Each worker process:
-
-Has its own memory
-
-Has its own Python interpreter
-
-Runs independently
-
-👉 Think:
-
-Worker:
-  Process 1 → Task A
-  Process 2 → Task B
-  Process 3 → Task C
-  Process 4 → Task D
-✅ Pros
-1. True parallelism (BIG)
-
-Uses multiple CPU cores
-
-No GIL limitation
-
-2. Isolation
-
-One crash ≠ kill others
-
-Safer for buggy code
-
-3. Good for CPU-heavy jobs
-
-image processing
-
-data computation
-
-❌ Cons
-1. High memory usage
-
-Each process ≈ full Python app loaded
-
-2. Slower startup
-🧵 2. Thread Pool (Celery alternative)
-celery -A project worker --pool=threads --concurrency=10
-
-👉 One process, multiple threads
-
-🧠 What that means
-Worker:
-  Process 1:
-    Thread 1 → Task A
-    Thread 2 → Task B
-    Thread 3 → Task C
-✅ Pros
-1. Low memory
-
-Shared memory space
-
-2. Great for I/O tasks
-
-API calls
-
-emails
-
-DB queries
-
-3. Faster context switching
-❌ Cons (VERY important)
-1. Python GIL 😬
-
-👉 Only ONE thread executes Python code at a time
-
-So:
-
-CPU-bound tasks → no real parallelism
-
-🧠 Sidekiq comparison
-
-In Ruby on Rails + Sidekiq:
-
-Uses threads
-
-Ruby does NOT have the same GIL limitation (MRI has GVL but behaves differently with I/O)
-
-👉 That’s why Sidekiq works great with high concurrency like:
-
-:concurrency: 25
-🔥 Key insight (VERY important)
-
-👉 Celery chose processes by default because:
-
-Python’s GIL makes threads bad for CPU work
-
-⚖️ When to use what?
-✅ Use process pool (default)
-
-Best for:
-
-CPU-heavy jobs
-
-general safe default
-
-most production setups
-
-celery -A project worker --concurrency=4
-✅ Use thread pool
-
-Best for:
-
-API calls
-
-sending emails
-
-external services
-
-celery -A project worker --pool=threads --concurrency=20
-🧠 Real-world pattern
-
-Smart teams split workloads:
-
-# CPU-heavy queue
-celery -A project worker -Q heavy --concurrency=2
-
-# I/O-heavy queue
-celery -A project worker -Q io --pool=threads --concurrency=20
-⚠️ Gotcha (Rails dev trap)
-
-If you try:
-
---pool=threads --concurrency=20
-
-for CPU-heavy work:
-
-👉 It will NOT scale like Sidekiq
-👉 It will be slower due to GIL
-
-💡 Final intuition
-
-Process pool → “multiple machines in one server”
-
-Thread pool → “multiple workers sharing same brain”
-
-🧠 One-line takeaway
-
-Sidekiq = threads everywhere
-Celery = processes by default, threads only for I/O
-
-If you want next, I can show:
-
-how to pick the right pool + concurrency based on your server (CPU cores, RAM)
-
-or real production configs (this is where most teams mess up)
+ 🔸Process Pool (Celery default)
+    Example:
+      celery -A project_name worker --concurrency=4
+
+    This creates 4 separate OS processes.
+    This means that each worker process:
+      Has its own memory
+      Has its own Python interpreter
+      Runs independently
+
+    Think of this like:
+      Worker:
+        Process 1 → Task A
+        Process 2 → Task B
+        Process 3 → Task C
+        Process 4 → Task D
+        
+   🔹Pros of process pools:
+      1. True parallelism (BIG)
+            Uses multiple CPU cores
+            No GIL limitation
+
+      2. Isolation
+          One crash ≠ kill others
+          Safer for buggy code
+
+      3. Good for CPU-heavy jobs
+          Image processing
+          Data computation
+
+   🔹Cons of process pools:
+      1. High memory usage
+          Each process ≈ full Python app loaded
+      2. Slower startup
+
+ 🔸Thread Pool (Celery alternative)
+    Example:
+      celery -A project_name worker --pool=threads --concurrency=10
+
+    This creats One process, multiple threads
+    It means that:
+      Worker:
+        Process 1:
+          Thread 1 → Task A
+          Thread 2 → Task B
+          Thread 3 → Task C
+
+   🔹Pros of thread Pools:
+      1. Low memory
+          Shared memory space
+      2. Great for I/O tasks
+          API calls
+          emails
+          DB queries
+      3. Faster context switching
+
+   🔹Cons of thread Pools:
+      1. Python GIL
+          Only ONE thread executes Python code at a time
+          So:
+            CPU-bound tasks → no real parallelism
+
+ 🔸Sidekiq comparison
+    In Ruby on Rails, sidekiq uses threads.
+    Ruby does NOT have the same GIL limitation (MRI has GVL but behaves differently with I/O)
+    That is why Sidekiq works great with high concurrency like:
+      :concurrency: 25
+    
+    So, Celery chose processes by default because Python’s GIL makes threads bad for CPU work.
+
+ 🔸When to use what?
+    Process pool (celery default) is best for:
+      CPU-heavy jobs
+      general safe default
+      most production setups 
+      
+      Example: celery -A project worker --concurrency=4
+    
+    Thread pool is best for:
+      API calls
+      sending emails
+      external services
+
+      Example: celery -A project worker --pool=threads --concurrency=20
+
+ 🔸Real-world pattern
+    Smart teams split workloads like this:
+      # CPU-heavy queue
+      celery -A project worker -Q heavy --concurrency=2
+
+      # I/O-heavy queue
+      celery -A project worker -Q io --pool=threads --concurrency=20
+
+    If you try this:
+      --pool=threads --concurrency=20
+    for CPU-heavy work then:
+      It will NOT scale like Sidekiq
+      It will be slower due to GIL
+
+  🔸Process pool → “multiple machines in one server”
+  🔸Thread pool → “multiple workers sharing same brain”
+
+  🔸Sidekiq = threads everywhere
+  🔸Celery = processes by default, threads only for I/O
+
+🔸Production Notes:
+  1.Idempotency
+    In Celery tasks can run more than once or workers can crash mid-task. So you must design tasks like:
+      @shared_task
+      def charge_user(user_id):
+          if Payment.objects.filter(user_id=user_id, status="done").exists():
+              return  # already processed
+          
+          # proceed safely
+        
+    This is same concept as Sidekiq retry safety. Avoiding double payments
+
+  2.Task time limits
+    Celery lets you kill stuck jobs:
+        @shared_task(time_limit=30, soft_time_limit=25)
+    
+    Rails equivalent: Sidekiq timeout middleware (not as explicit)
+
+  3.Result backend (when needed)
+    By default Celery principle is "fire-and-forget"
+    But sometimes:
+      result = task.delay()
+      result.get()  # waits
+    Uses Redis/DB as result backend.
+    Not common in web apps, but useful in pipelines.
+
+  4.Monitoring
+    You should know tools like:
+      Flower → UI for tasks (Just like Sidekiq web UI)
+      Logs
+      Metrics (Prometheus, etc.)
+
+🔸What is Python GIL?
+  It stands for Global Interpreter Lock.
+  In Python, the GIL means: Only ONE thread can execute Python code at a time (per process)
+  In simple words, If a process has multiple threads then only one thread can execute python code at a time.
+  
+  GIL exists for memory safety.
+  Python makes it easy to:
+      x += 1
+  Without GIL:
+    Multiple threads could corrupt memory
+    You would need complex locking everywhere
+  So Python says: “Only one thread runs at a time → safe”.
+
+🔸What problem does GIL cause?
+  It causes problems in CPU-bound tasks.
+
+  Example:
+  def heavy_task():
+      for i in range(10**9):
+          pass
+
+  Even with multiple threads:
+    Thread1 → running
+    Thread2 → WAITING
+    Thread3 → WAITING
+
+  So, No real parallelism
+
+🔸When GIL is NOT a problem?
+  GIL is not a problem in case of I/O tasks.
+  Example: requests.get("https://api.com")
+
+  While waiting:
+    Python releases GIL
+    Another thread runs
+
+  So threads work GREAT for:
+    APIs
+    Emails
+    DB calls
+
+===============================================================================================================
+                        PRODUCTION GRADE TASK EXAMPLE
+===============================================================================================================
+from celery import shared_task
+from django.utils import timezone
+import logging
+logger = logging.getLogger("message_jobs")
+
+class MessageDeliveryError(Exception):
+  pass
+
+@shared_task(bind=True, max_retries=1, queue="default")
+def whatsapp_message_deliver_task(self, message_id):
+  from .models import Message
+  from .services import whatsapp_message_delivery_service
+  from .tasks import message_status_notifier_task
+
+  logger.info(f"START message_id={message_id}")
+
+  try:
+    message = Message.objects.get(id=message_id)
+    response = whatsapp_message_delivery_service(message)
+
+    if response.success:
+      message.status = response.message_status or "accepted"
+      message.remote_id_meta = response.wa_message_id
+      message.response_json = response.success_response
+      message.save()
+      logger.info(f"SENT message_id={message.id}")
+    else:
+      if response.internal_server_error:
+        message.status = "processing"
+        message.error_text = response.error_message
+        message.response_json = response.raw_response
+        message.save()
+
+        logger.error(f"ATTEMPT FAILED message_id={message.id} - {response.error_message}")
+        raise MessageDeliveryError(response.error_message)
+  
+      else:
+        message.status = "failed"
+        message.error_text = response.error_message
+        message.response_json = response.raw_response
+        message.save()
+        message_status_notifier_task.delay(message.id)
+
+        logger.error(f"FAILED message_id={message.id} - {response.error_message}")
+
+  except MessageDeliveryError as exc:
+    try:
+      self.retry(exc=exc, countdown=10)
+    except self.MaxRetriesExceededError:
+      handle_final_failure(message_id, str(exc))
+
+def handle_final_failure(message_id, error_message):
+  from .models import Message
+  from .tasks import message_status_notifier_task
+
+  try:
+    message = Message.objects.get(id=message_id)
+    message.status = "failed"
+    message.error_text = error_message
+    message.save()
+    message_status_notifier_task.delay(message.id)
+
+    logger.error(f"FINAL FAILURE message_id={message.id} - {error_message}")
+
+  except Message.DoesNotExist:
+    logger.error("FINAL FAILURE - message not found")
+
+  --------------------------- EQUIVALENT RAILS EXAMPLE -----------------------------
+
+class Whatsapp::MessageDeliverJob < ApplicationJob
+  class MessageDeliveryError < StandardError; end
+
+  queue_as :default
+  retry_on MessageDeliveryError, attempts: 1
+
+  MESSAGE_JOB_LOGGER = Logger.new(Rails.root.join("log/message_jobs.log"))
+  MESSAGE_JOB_LOGGER.level = Logger::INFO
+
+  # Final failure
+  discard_on MessageDeliveryError do |job, error|
+    message = job.arguments.first
+
+    if message
+      message.update!(status: "failed", error_text: error.message)
+      MessageStatusCallbackNotifier::MessageStatusNotifierJob.perform_later(message.id)
+      MESSAGE_JOB_LOGGER.error("FINAL FAILURE message_id=#{message.id} - #{error.message}")
+    else
+      MESSAGE_JOB_LOGGER.error("FINAL FAILURE - message not available in job arguments")
+    end
+  end
+
+  def perform(message, message_id)
+    MESSAGE_JOB_LOGGER.info("START message_id=#{message_id}")
+
+    message_response = Whatsapp::MessageDeliveryService.call(message)
+
+    if message_response.success?
+      message.update!(
+        status: message_response.message_status || "accepted", # "accepted"
+        remote_id_meta: message_response.wa_message_id,
+        response_json: message_response.success_response,
+      )
+      MESSAGE_JOB_LOGGER.info("SENT message_id=#{message.id}")
+    else
+      if message_response.internal_server_error?
+        message.update!(
+          status: "processing",
+          error_text: message_response.error_message,
+          response_json: message_response.raw_response,
+        )
+
+        MESSAGE_JOB_LOGGER.error("ATTEMPT FAILED message_id=#{message.id} - #{message_response.error_message}")
+        raise MessageDeliveryError, message_response.error_message
+      else
+        message.update!(
+          status: "failed",
+          error_text: message_response.error_message,
+          response_json: message_response.raw_response,
+        )
+
+        MessageStatusCallbackNotifier::MessageStatusNotifierJob.perform_later(message.id)
+
+        MESSAGE_JOB_LOGGER.error("ATTEMPT FAILED message_id=#{message.id} - #{message_response.error_message}")
+      end
+    end
+  end
+end
+
+
+NOTE:
+  1. Django has NO direct equivalent for discard_on like rails. So you manually handle it:
+     In rails: discard_on MessageDeliveryError do |job, error|
+     In Django:
+        except self.MaxRetriesExceededError:
+          handle_final_failure(...)
+
+  2. In Django, we have to configure the logs in settings.
+      #settings.py
+      LOGGING = {
+        "version": 1,
+        "handlers": {
+            "message_file": {
+                "class": "logging.FileHandler",
+                "filename": "log/message_jobs.log",
+            },
+        },
+        "loggers": {
+            "message_jobs": {
+                "handlers": ["message_file"],
+                "level": "INFO",
+            },
+        },
+      }
+
+    Then we can use it like:
+      import logging
+      logger = logging.getLogger("message_jobs")
